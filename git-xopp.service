@@ -1,0 +1,5 @@
+[Unit]
+Description="Run script to commit changes to Git"
+
+[Service]
+ExecStart=./git-xopp.sh Directory
