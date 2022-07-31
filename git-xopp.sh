@@ -13,9 +13,9 @@
 # Approach via: https://stackoverflow.com/a/28776166/8787985
 if ! (return 0 2> /dev/null); then
     # A better class of script...
-    set -o errexit      # Exit on most errors (see the manual)
+#    set -o errexit      # Exit on most errors (see the manual): Unreliable
     set -o nounset      # Disallow expansion of unset variables
-    set -o pipefail     # Use last non-zero exit code in a pipeline
+#    set -o pipefail     # Use last non-zero exit code in a pipeline: Unreliable
 fi
 
 #set -o noexec # No execution mode enabled
@@ -55,13 +55,6 @@ DirExist() {
 			mkdir -p "$pdfDir"
 		fi
 
-		if [[ -d "$tmpDir" ]]
-		then
-			true
-		else
-			mkdir -p "$tmpDir"
-		fi
-
 	else
 		ScriptUsage
 	fi
@@ -70,30 +63,32 @@ DirExist() {
 GitExist() {
 			if [[ -d "${gitDir}/.git" ]]
 			then
-				true
+				if [[ -d "$tmpDir" ]] # tmpDir can be made only if gitDir exists and not before.
+				then
+					true
+				else
+					mkdir -p "$tmpDir"
+				fi
 			else   # check git repo exists if not create a dir and init a git vcs
 				# Use parenthesis after OR operator. Source: https://stackoverflow.com/a/14836846
-				mkdir -p "$tmpDir" || ( notify-send --wait "Bullshit" && exit 1 )
+				mkdir -p "$tmpDir" || ( echo "$tmpDir cannot be created." && exit 1 )
 				cd "$gitDir" && git init
 			fi
 }
 
-DecomXopp() {
-			cd "$direc" || ( notify-send --wait "Bullshit" && exit 1 )
+DecomXopp() { # Decompress Xopp file to .tmp/*.xml
+			cd "$direc" # || ( notify-send --wait "Bullshit" && exit 1 ). No need to check as it is checked in DirExist.
 			for i in *.xopp
-				do [ -e "$i" ] || continue
+				do [ -e "$i" ] || ( echo "No Xopp file in $direc" && exit 1 )
 					gzip -cd "${direc}/$i" > "$tmpDir"/"${i::-5}.xml"
 			done
 }
 
 CreateCommitMsg() {
-#			CheckSha() {
-#			[[ $(sha1sum "$i" | cut -d ' ' -f 1) == "$(sha1sum "$TmpDir"/"$i" | cut -d ' ' -f 1)" ]]
-#			}
 			# Source: https://linuxcent.com/bash-how-to-trim-string/
-			cd "$tmpDir"
+			cd "$tmpDir" # || ( notify-send --wait "Bullshit" && exit 1 ). It was created in GitExist.
 			for i in *.xml
-			do [ -e "$i" ] || continue
+			do [ -e "$i" ] || ( echo "No Xml file in $tmpDir" && exit 1 )
 				if [[ -f "${gitDir}/${i::-4}" ]]
 				then
 					if [[ $(sha1sum "${gitDir}/${i::-4}" | cut -d ' ' -f 1) == "$(sha1sum "${tmpDir}/$i" | cut -d ' ' -f 1)" ]]
@@ -102,12 +97,12 @@ CreateCommitMsg() {
 					else
 						mv "${tmpDir}/$i" "${gitDir}/${i::-4}"
 						printf "%s\n" "Modified ${i::-4}.pdf" >> "${tmpDir}/Commit.msg"
-#						xournalpp --create-pdf="${pdfDir}/${i::-4}.pdf" "${direc}/${i::-4}.xopp"
+						xournalpp --create-pdf="${pdfDir}/${i::-4}.pdf" "${direc}/${i::-4}.xopp"
 					fi
 				else
 					mv "${tmpDir}/$i" "${gitDir}/${i::-4}"
 					printf "%s\n" "New file ${i::-4}.pdf added." >> "${tmpDir}/Commit.msg"
-#					xournalpp --create-pdf="${pdfDir}/${i::-4}.pdf" "${direc}/${i::-4}.xopp"
+					xournalpp --create-pdf="${pdfDir}/${i::-4}.pdf" "${direc}/${i::-4}.xopp"
 				fi
 			done
 }
@@ -115,8 +110,8 @@ CreateCommitMsg() {
 GitCommit() {
 			if [[ -f "${tmpDir}/Commit.msg" ]]
 			then
-				cd "$gitDir" || ( notify-send --wait "Bullshit" && exit 1 )
-				git add --all -- ':!.tmp'
+				cd "$gitDir" # || ( notify-send --wait "Bullshit" && exit 1 ). Created in GitExist
+				git add --all -- ':!.tmp' # Add all files except .tmp folder
 				git commit -qF "${tmpDir}/Commit.msg"	# Use Commit.msg as Commit message.
 			else
 				exit 0
@@ -128,19 +123,17 @@ DeleteTmp() {
 			then
 				rm -rf "$tmpDir"
 			else
-				notify-send --wait "git-xopp.sh failed"
 				exit 1
 			fi
 }
 
 ExtractXopp() {
-#	if [[ -d "${1}/.git" && -f "${1}/${3::-5}" && -d "$4" ]]
 	if [[ -d "${1}/.git" && -d "$4" ]]
 	then
-		cd "$1"
-		if git cat-file commit "${2}"
+		cd "$1" # || ( notify-send --wait "Bullshit" && exit 1 ). The directory exists.
+		if git cat-file commit "${2}" # Check if commit hash is valid.
 		then
-			git show "${2}":"${3::-5}" | gzip -c - > "${4}/${3}"
+			git show "${2}":"${3::-5}" | gzip -c - > "${4}/${3}" # Git show used to extract file at a particular commit.
 		else
 			echo "Commit does not exist."
 			exit 1
@@ -153,29 +146,45 @@ ExtractXopp() {
 
 ExtractPdf() {
 
-	body() { # TODO: Use a different background for PDF instead of hardcoded one, incase the pdf has been moved.
-		if [[ -f "$( gzip -cd "${1}/.tmp/${3::-4}.xopp" | grep filename  | cut -d '"' -f 6)" ]]
+	body() {
+		ExtractXopp "${1}" "$2" "${3::-4}.xopp" "${1}"/.tmp
+		# Use a different background for PDF instead of hardcoded one, incase the pdf has been moved.
+		local backgroundOld backgroundNew
+		backgroundOld="$(gzip -cd "${1}/.tmp/${3::-4}.xopp" | grep filename  | cut -d '"' -f 6)"
+		backgroundNew="${5:-new}"
+		if [[ "$backgroundNew" != "new" ]]
 		then
-			xournalpp --create-pdf="${4}/${3}" "${1}/.tmp/${3::-4}.xopp"
-			rm -rf "${1}/.tmp"
+			if [[ -f "$backgroundNew" ]]
+			then
+				# Extract Xopp file
+				gzip -cd "${1}/.tmp/${3::-4}.xopp" > "${1}/.tmp/${3::-4}" && rm "${1}/.tmp/${3::-4}.xopp"
+				# Source:
+				sed -i "s#$backgroundOld#$backgroundNew#" "${1}/.tmp/${3::-4}" # use sed for string manipulation
+				gzip "${1}/.tmp/${3::-4}" > "${1}/.tmp/${3::-4}.xopp"
+				xournalpp --create-pdf="${4}/${3}" "${1}/.tmp/${3::-4}.xopp"
+				rm -rf "${1}/.tmp"
+			else
+				echo "PDF does not exist, check again."
+			fi
 		else
-			echo "PDF does not exist, check again."
+			if [[ -f "$backgroundOld" ]]
+			then
+				xournalpp --create-pdf="${4}/${3}" "${1}/.tmp/${3::-4}.xopp"
+				rm -rf "${1}/.tmp"
+			else
+				echo "PDF does not exist, check again."
+			fi
 		fi
 	}
 	if [[ -d "${1}/.tmp" && -d "${1}/.git" ]]
 	then
-		ExtractXopp "${1}" "$2" "${3::-4}.xopp" "${1}"/.tmp
 		body "$@"
 	else
 		mkdir -p "${1}/.tmp" "${1}/.git"
-		ExtractXopp "${1}" "$2" "${3::-4}.xopp" "${1}"/.tmp
 		body "$@"
 	fi
 }
 
-# DESC: Usage help
-# ARGS: None
-# OUTS: None
 ScriptUsage() {
     cat << EOF
 Usage:
@@ -205,7 +214,7 @@ exit 1
 # Source: https://stackoverflow.com/a/2013589
 
 checkVar() {
-	local mcd="${1:-mcd}"
+	local mcd="${1:-mcd}" # Set default value for $mcd.
 	if [[ "$mcd" == "mcd" ]]
 	then
 		ScriptUsage
@@ -217,7 +226,7 @@ checkVar() {
 cmd="${1:-cmd}"
 case "$cmd" in
 	extract|ex|e)
-		shift
+		shift # Shift all positional variables to left
 		checkVar "$@"
 		ExtractXopp "$@"
 		;;
