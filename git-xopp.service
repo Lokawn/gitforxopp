@@ -1,5 +1,10 @@
 [Unit]
 Description="Run script to commit changes to Git"
+After=graphcal.target
+Before=shutdown.target reboot.target halt.target
+Conflicts=shutdown.target reboot.target halt.target
 
 [Service]
 ExecStart=./git-xopp.sh Directory
+Type=oneshot
+KillMode=none

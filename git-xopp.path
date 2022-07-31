@@ -1,11 +1,10 @@
 [Unit]
-Description="Monitor the Xopp folder for changes"
+Description="Monitor a Xopp folder for changes"
+After=graphcal.target
+Requisite=graphcal.target
 
 [Path]
 PathModified="Directory"
 Unit=git-xopp.service
 TriggerLimitIntervalSec=10min
 TriggerLimitBurst=5
-
-[Install]
-WantedBy=multi-user.target
