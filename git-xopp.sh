@@ -107,6 +107,15 @@ CreateCommitMsg() {
 			done
 }
 
+DeleteTmp() {
+			if [[ "$?" == 0 ]]
+			then
+				rm -rf "$tmpDir"
+			else
+				exit 1
+			fi
+}
+
 GitCommit() {
 			if [[ -f "${tmpDir}/Commit.msg" ]]
 			then
@@ -114,16 +123,9 @@ GitCommit() {
 				git add --all -- ':!.tmp' # Add all files except .tmp folder
 				git commit -qF "${tmpDir}/Commit.msg"	# Use Commit.msg as Commit message.
 			else
+				return 0 && DeleteTmp
+				echo "Nothing to do."
 				exit 0
-			fi
-}
-
-DeleteTmp() {
-			if [[ "$?" == 0 ]]
-			then
-				rm -rf "$tmpDir"
-			else
-				exit 1
 			fi
 }
 
