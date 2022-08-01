@@ -133,7 +133,8 @@ ExtractXopp() {
 		cd "$1" # || ( notify-send --wait "Bullshit" && exit 1 ). The directory exists.
 		if git cat-file commit "${2}" # Check if commit hash is valid.
 		then
-			git show "${2}":"${3::-5}" | gzip -c - > "${4}/${3}" # Git show used to extract file at a particular commit.
+			( git show "${2}":"${3::-5}" | gzip -c - > "${4}/${3}") || ( echo "File not found in commit." && exit 1 )
+			# Git show used to extract file at a particular commit.
 		else
 			echo "Commit does not exist."
 			exit 1
